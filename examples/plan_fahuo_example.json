@@ -1,0 +1,31 @@
+{
+  "task_summary": "每3秒检测屏幕是否出现'发货成功'文字，出现则播放报警音并停止",
+  "loop": {
+    "enabled": true,
+    "interval_ms": 3000,
+    "max_iterations": 50
+  },
+  "phases": [
+    {
+      "phase": "detect",
+      "method": "image_or_ocr",
+      "target_description": "屏幕上的'发货成功'文字",
+      "on_success": "proceed_to_next",
+      "details": {
+        "keywords": "发货成功"
+      }
+    },
+    {
+      "phase": "act",
+      "action": "alarm",
+      "position_source": "none",
+      "on_complete": "finish"
+    }
+  ],
+  "window": {
+    "bind": false,
+    "title": "",
+    "pid": null
+  },
+  "notes": "检测到'发货成功'后播放报警音并停止任务；若50次循环内未检测到则自动结束"
+}

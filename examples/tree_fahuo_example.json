@@ -1,0 +1,142 @@
+{
+  "version": "2.1",
+  "format_type": "behavior_tree",
+  "metadata": {
+    "created_at": "2026-08-18T11:27:12.817256",
+    "modified_at": "2026-08-18T11:27:12.817256",
+    "app_version": "1.6.8b"
+  },
+  "canvas": {
+    "name": "AI生成流程",
+    "description": "",
+    "viewport": {
+      "zoom": 1.0,
+      "offset_x": 0,
+      "offset_y": 0
+    }
+  },
+  "root_node": "node_start",
+  "nodes": {
+    "node_start": {
+      "id": "node_start",
+      "type": "StartNode",
+      "name": "开始",
+      "enabled": true,
+      "config": {
+        "bind_window": false
+      },
+      "position": {
+        "x": 400,
+        "y": 50
+      },
+      "children": [
+        "node_loop"
+      ]
+    },
+    "node_loop": {
+      "id": "node_loop",
+      "type": "SequenceNode",
+      "name": "顺序执行",
+      "enabled": true,
+      "config": {
+        "repeat_count": 50,
+        "repeat_interval_ms": 3000
+      },
+      "position": {
+        "x": 400,
+        "y": 150
+      },
+      "children": [
+        "node_detect",
+        "node_delay"
+      ]
+    },
+    "node_detect": {
+      "id": "node_detect",
+      "type": "OCRConditionNode",
+      "name": "OCR识别",
+      "enabled": true,
+      "config": {
+        "keywords": "发货成功",
+        "language": "简体中文",
+        "preprocess_mode": "默认",
+        "check_interval_ms": 300,
+        "save_position": true
+      },
+      "position": {
+        "x": 300,
+        "y": 250
+      },
+      "children": [
+        "node_alarm"
+      ]
+    },
+    "node_alarm": {
+      "id": "node_alarm",
+      "type": "AlarmNode",
+      "name": "报警",
+      "enabled": true,
+      "config": {
+        "volume": 70,
+        "wait_complete": true
+      },
+      "position": {
+        "x": 400,
+        "y": 350
+      },
+      "children": [
+        "node_stop"
+      ]
+    },
+    "node_stop": {
+      "id": "node_stop",
+      "type": "StopTreeNode",
+      "name": "停止树",
+      "enabled": true,
+      "config": {
+        "target_tree": ""
+      },
+      "position": {
+        "x": 400,
+        "y": 450
+      },
+      "children": []
+    },
+    "node_delay": {
+      "id": "node_delay",
+      "type": "DelayNode",
+      "name": "延时",
+      "enabled": true,
+      "config": {
+        "duration_ms": 1000
+      },
+      "position": {
+        "x": 500,
+        "y": 250
+      },
+      "children": []
+    }
+  },
+  "connections": [
+    {
+      "parent_id": "node_start",
+      "child_id": "node_loop"
+    },
+    {
+      "parent_id": "node_loop",
+      "child_id": "node_detect"
+    },
+    {
+      "parent_id": "node_loop",
+      "child_id": "node_delay"
+    },
+    {
+      "parent_id": "node_detect",
+      "child_id": "node_alarm"
+    },
+    {
+      "parent_id": "node_alarm",
+      "child_id": "node_stop"
+    }
+  ]
+}

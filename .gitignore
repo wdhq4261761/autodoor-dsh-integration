@@ -1,0 +1,20 @@
+# AutoDoor × DSH 集成仓库自身的忽略规则
+# 注意：此 .gitignore 只作用于 dsh_integration 这个独立仓库，不影响 AutoDoor 主仓库。
+
+# Python / 环境（若将来加入更多 Python 代码）
+venv/
+__pycache__/
+*.py[cod]
+.env
+
+# IDE / 系统
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+.DS_Store
+
+# 日志与临时文件
+*.log
+*.tmp

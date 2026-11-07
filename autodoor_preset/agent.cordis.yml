@@ -251,8 +251,9 @@
     searchTimeoutMs: 60000
 
 # ── AutoDoor 行为树驱动工具 ──────────────────────────────────────────────
-# 本地 ESM 插件，将 AutoDoor venv CLI 封装为 7 个模型工具（validate/run/status/stop/
-# read_log/list_nodes/ai_create）。仅注册工具、不发布服务，依赖 host 的 subprocess 与
+# 本地 ESM 插件，将 AutoDoor venv CLI 封装为 12 个模型工具（validate/run/status/stop/
+# read_log/list_nodes/list_plugins/create_plugin/save_structure/generate/
+# assets_add/assets_verify）。仅注册工具、不发布服务，依赖 host 的 subprocess 与
 # harness，因此松散放置（不进 isolate realm），与 tool-bash/tool-fs 同理。
 - id: autodoor-tools
   name: 'C:/Users/WINDOWS/.dsh/.agent-presets/autodoor/autodoor-tools-v2.mjs'

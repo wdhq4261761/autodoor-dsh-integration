@@ -290,6 +290,10 @@ npx -y --registry=https://registry.npmmirror.com @deepseek-ai/dsh web
 ```
 
 > 该命令会启动 Web 服务并常驻。Agent 应以"后台启动 → 探测端口 → 关闭"的方式验证，不要阻塞等待。
+>
+> **人工启动走脚本**：仓库根目录的 `start-dsh.bat` 等价于上面这条命令，已固定版本（`DSH_VER=0.2.1-rc.5`）并带 Node 检测，
+> 适合真人双击启动。Agent 自己执行时仍用上面的 `npx` 命令（需要后台启动 + 探测端口）。
+> 注意该文件为 GBK 编码 + CRLF 换行，改动时不要存成 UTF-8（也不要用 GitHub 网页编辑器编辑它）。
 
 **成功判据**：
 - `$DSH_HOME\profiles\web\package.json` 存在

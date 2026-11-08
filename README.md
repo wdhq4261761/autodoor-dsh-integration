@@ -20,6 +20,7 @@
 
 ```
 dsh_integration/
+├── start-dsh.bat             # 一键启动 DSH Web（双击即可，含 Node 版本检测）
 ├── autodoor_preset/          # DSH 代理预设（核心交付，安装到 DSH 后跨会话 / 跨重启可用）
 │   ├── autodoor-tools-v2.mjs # 12 个工具的本地 ESM 插件
 │   ├── agent.cordis.yml      # DSH 预设组合配置（引用上面的插件行）
@@ -121,6 +122,23 @@ C:\Users\<用户名>\.dsh\.agent-presets\autodoor\
 
 > 换机时只需设置 `AUTODOOR_ROOT`，不必再改脚本内的硬编码路径。
 > 打包版务必调用同目录的 `autodoor-cli.exe` 而非图形版 exe——图形版没有 stdout，工具拿到的输出永远是空串。
+
+### 5.2 一键启动 DSH（start-dsh.bat）
+
+不想敲 `npx` 命令的话，**clone 本仓库后回到仓库根目录，双击 `start-dsh.bat`** 即可启动 DSH Web。
+等价于 `npx -y --registry=https://registry.npmmirror.com @deepseek-ai/dsh web`，但多做了三件事：
+
+1. **版本固定** `DSH_VER=0.2.1-rc.5`——与部署手册和教程录屏同版本，避免 npm `latest` 升级后界面 / 插件行为对不上；想跟新版改脚本里的 `set "DSH_VER=..."` 一行即可
+2. **Node 检测**——没装 Node 或版本低于 22 时不再闪退，而是停在窗口里给出下载地址（nodejs.org）与升级提示，与视觉插件的 Node 22 硬门槛对齐
+3. **`call npx` + 退出码处理**——失败时打印退出码与三类常见原因（网络不通 / 端口占用 / 版本过低），不再无提示退出
+
+脚本会 `cd` 到 `%USERPROFILE%` 再启动：DSH 配置在 `%USERPROFILE%\.dsh`，与工作目录无关；若留在仓库根目录启动，DSH 会把整个仓库当项目根。
+
+> ⚠️ **改动此文件必须保存为 ANSI / GBK 编码 + CRLF 换行**（仓库已用 `.gitattributes` 强制 checkout 为 CRLF）。
+> cmd.exe 按字节读 `.bat` 且不认 UTF-8 声明，存成 UTF-8 后中文会被切碎当命令执行，报一堆 `'xxx' 不是内部或外部命令`。
+> **不要用 GitHub 网页编辑器修改此文件**——网页端默认存 UTF-8，一保存就乱码。
+
+> Agent / 自动化场景请继续用部署手册 S4 的 `npx` 命令（需要后台启动 + 端口探测），双击脚本适合真人操作。
 
 ## 6 开发历程（摘要）
 

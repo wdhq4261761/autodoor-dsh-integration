@@ -1,0 +1,3 @@
+# .bat 必须保持 GBK/ANSI 内容 + CRLF 换行：cmd.exe 按 ANSI 字节读脚本，
+# checkout 成 LF 或 UTF-8 重存都会让中文提示碎成乱码并被当作命令执行
+*.bat text eol=crlf

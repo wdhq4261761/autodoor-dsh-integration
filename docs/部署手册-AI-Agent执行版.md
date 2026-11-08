@@ -233,7 +233,8 @@ Set-Location $AUTODOOR_ROOT
 
 ```powershell
 # 产物来自同版本的打包构建，目录名含版本号
-$PKG = 'D:\apps\autodoor-behaviortree-1.7.4'
+# 版本号以主仓库 Releases 页最新 tag 为准（当前为 2.0.0），不要照抄示例里的旧目录名
+$PKG = 'D:\apps\autodoor-behaviortree-2.0.0'
 $AUTODOOR_ROOT = $PKG
 Test-Path "$PKG\autodoor-cli.exe"
 Test-Path "$PKG\plugins\vlm_vision\plugin.json"
@@ -368,14 +369,19 @@ $SRC = if (Test-Path "$AUTODOOR_ROOT\dsh_integration\autodoor_preset\autodoor-to
 if (-not $SRC) { throw '未找到 autodoor-tools-v2.mjs：请先 clone autodoor-dsh-integration 仓库或补齐源码目录' }
 Copy-Item "$SRC\autodoor-tools-v2.mjs" $PRESET_DIR -Force
 Copy-Item "$SRC\agent.cordis.yml" $PRESET_DIR -Force
+Copy-Item "$SRC\preset.yml" $PRESET_DIR -Force
 Get-ChildItem $PRESET_DIR
 ```
+
+> 三个文件的角色：`autodoor-tools-v2.mjs` 是唯一被真正加载的插件本体；`agent.cordis.yml` 是预设组合配置（供阅读与旧版回退）；
+> `preset.yml` 是预设元数据（显示名 / 描述）。DSH 0.2.x 不扫描 `.agent-presets` 目录，后两个不会自动生效，
+> 但保持三个齐全，与 README 第 5 节及仓库目录一致，旧版 DSH 也能直接用。
 
 > **⚠️ 工具集文件的来源（必读）**
 >
 > `dsh_integration\` 目录**不在** AutoDoor 主仓库的版本控制内（`.gitignore` 明确排除，属独立仓库）。
 > 因此：
-> - 从 GitHub `clone` AutoDoor 主仓库**拿不到**这两个文件；
+> - 从 GitHub `clone` AutoDoor 主仓库**拿不到**这三个文件；
 > - 走打包方案时，产物里也不含（只有源码与配置，不进 exe）。
 >
 > 正确来源是**本仓库（autodoor-dsh-integration）**：
@@ -407,9 +413,10 @@ Get-ChildItem $PRESET_DIR
 ```powershell
 node --check (Join-Path $PRESET_DIR 'autodoor-tools-v2.mjs')
 (Select-String -Path (Join-Path $PRESET_DIR 'autodoor-tools-v2.mjs') -Pattern "name: 'autodoor_" -AllMatches).Matches.Count
+(Get-ChildItem $PRESET_DIR -File).Count
 ```
 
-第一项无输出（语法 OK），第二项 = **12**。
+第一项无输出（语法 OK），第二项 = **12**，第三项 = **3**（三个文件都到位）。
 
 > 若第二项 < 12，说明拿到的是旧版工具集（8 个工具），⛔ 停止并换用配套版本——旧版缺 `ai` / `assets` 相关工具，会导致校验与素材流程不可用。
 
@@ -547,6 +554,9 @@ autodoor_status      → 应返回运行状态
 | 10 | 环境变量 | `[Environment]::GetEnvironmentVariable('AUTODOOR_ROOT','User')` | 返回实际根目录 |
 | 11 | 预设注册 | `Select-String cordis.patch.yml -Pattern 'preset-autodoor'` | 有匹配 |
 | 12 | 端到端 | DSH 会话内调 `autodoor_list_nodes` | 返回节点清单 |
+
+> **打包方案（S2'）跳过第 2 项**：该方案不装 Python，`cv2` / `pywinauto` 已随 exe 打包，命令必然报 ModuleNotFoundError。
+> 此时按 **11 项**判定，输出 `验收: 11/11 PASS`；其余 11 项判据不变。
 
 输出：
 

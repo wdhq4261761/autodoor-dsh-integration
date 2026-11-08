@@ -133,5 +133,10 @@ C:\Users\<用户名>\.dsh\.agent-presets\autodoor\
 
 ## 7 相关链接
 
-- AutoDoor 主仓库：`git@github.com:wdhq4261761/autodoor_behavior_tree.git`
-- 本仓库：见 git remote
+| 仓库 | 地址 | 说明 |
+| --- | --- | --- |
+| AutoDoor 主仓库（行为树引擎本体） | <https://github.com/wdhq4261761/autodoor_behavior_tree> | 源码部署 clone 此仓库，或使用其 Releases 的打包产物；本仓库的 12 个工具全部通过其 CLI（`cli.py` / `autodoor-cli.exe`）驱动引擎 |
+| 本仓库（DSH 集成） | <https://github.com/wdhq4261761/autodoor-dsh-integration> | DSH 代理预设 + 12 个模型工具 + 部署手册；`dsh_integration\` 目录在主仓库中不入库，仅在此处分发 |
+
+> 版本配套：两边仓库按同号 tag 对应（AutoDoor V2.0.0 ↔ 本仓库 v2.0.0）。预设依赖 CLI 的具体命令，
+> 主仓库大版本升级后请同步更新本仓库并重新打 tag。

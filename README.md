@@ -24,9 +24,10 @@ dsh_integration/
 │   ├── autodoor-tools-v2.mjs # 12 个工具的本地 ESM 插件
 │   ├── agent.cordis.yml      # DSH 预设组合配置（引用上面的插件行）
 │   └── preset.yml            # 预设元数据（显示名「AutoDoor 自动化」）
-├── docs/                     # 开发文档
+├── docs/                     # 开发与部署文档
 │   ├── 10_DeepSeekHarness_AI驱动能力接入分析.md   # 技术分析与路线决策
-│   └── 11_AutoDoor自动化AI执行流程_使用文档.md     # 面向使用者的操作手册
+│   ├── 11_AutoDoor自动化AI执行流程_使用文档.md     # 面向使用者的操作手册
+│   └── 部署手册-AI-Agent执行版.md                  # 纯净 PC 从零部署（AI Agent 可直接执行）
 └── examples/                 # AI 流程实测产物示例（「发货成功检测」场景）
     ├── plan_fahuo_example.json   # 意图分析产物 plan.json
     └── tree_fahuo_example.json   # 生成的行为树 tree.json
@@ -66,7 +67,30 @@ dsh_integration/
 | `autodoor_read_log` | 按字节偏移读取运行日志，支持增量拉取 |
 | `autodoor_stop` | 停止后台运行（终止进程树） |
 
-## 4 安装到 DSH
+## 4 部署
+
+**本仓库是部署 DSH 侧的完整入口**：clone 本仓库即可同时拿到部署手册和手册 S6 需要的全部工具插件文件。
+
+```bash
+git clone https://github.com/wdhq4261761/autodoor-dsh-integration.git
+```
+
+| 部署内容 | 位置 | 说明 |
+| --- | --- | --- |
+| 部署手册（AI Agent 执行版） | [`docs/部署手册-AI-Agent执行版.md`](docs/部署手册-AI-Agent执行版.md) | 面向 AI Agent 的可机读步骤，人类可当核对清单；覆盖纯净 Windows PC 从零到端到端联调 |
+| 12 个工具插件（手册 S6 所需程序） | [`autodoor_preset/`](autodoor_preset/) | `autodoor-tools-v2.mjs` / `agent.cordis.yml` / `preset.yml` |
+| 预设运行说明与路径配置 | 本文 §5 | `AUTODOOR_ROOT` / `AUTODOOR_CLI` / `AUTODOOR_PY` |
+| AutoDoor 本体 | [autodoor_behavior_tree 主仓库](https://github.com/wdhq4261761/autodoor_behavior_tree) | 源码方案 clone + venv，或用同版本打包产物 |
+
+手册步骤概览（S1–S8，均带成功判据与失败分支）：
+
+```
+S1 Node.js 22 → S2/S2' AutoDoor 运行时（源码 / 打包二选一） → S3 本体验证
+→ S4 初始化 DSH → S5 视觉插件 → S6 安装 12 工具（本仓库 autodoor_preset）
+→ S7 profile 注册预设 → S8 端到端联调
+```
+
+## 5 安装到 DSH（仅预设部分，跳过完整部署时看这节）
 
 把 `autodoor_preset/` 下的三个文件复制到 DSH 用户预设目录：
 
@@ -79,7 +103,7 @@ C:\Users\<用户名>\.dsh\.agent-presets\autodoor\
 
 新建 Agent 会话时选择预设 **「AutoDoor 自动化」** 即可获得 12 个工具。
 
-### 4.1 路径配置
+### 5.1 路径配置
 
 插件支持两种运行形态，由 `AUTODOOR_ROOT` 下的文件存在性自动判定，也可用环境变量显式指定：
 
@@ -98,7 +122,7 @@ C:\Users\<用户名>\.dsh\.agent-presets\autodoor\
 > 换机时只需设置 `AUTODOOR_ROOT`，不必再改脚本内的硬编码路径。
 > 打包版务必调用同目录的 `autodoor-cli.exe` 而非图形版 exe——图形版没有 stdout，工具拿到的输出永远是空串。
 
-## 5 开发历程（摘要）
+## 6 开发历程（摘要）
 
 1. **路线决策**：路线 A（结构化模型工具插件）为主开发主线；路线 B（CLI 直接调用）放弃；路线 C（HTTP 长驻桥）预留。
 2. **第 1 步**：最小插件（5 工具 validate / run / status / stop / read_log）。
@@ -107,7 +131,7 @@ C:\Users\<用户名>\.dsh\.agent-presets\autodoor\
 5. **第 3.5 步**：完整 8 工具闭环（+ 后台 AI 流水线），端到端验证通过。
 6. **第 4 步（AutoDoor V2.0.0）**：扩到 12 工具，新增素材制作（`assets_add` / `assets_verify`）、插件脚手架（`create_plugin`）、能力发现（`list_plugins`）与 `save_structure`；执行层改为双形态自适应，支持免安装包直接调用。
 
-## 6 相关链接
+## 7 相关链接
 
 - AutoDoor 主仓库：`git@github.com:wdhq4261761/autodoor_behavior_tree.git`
 - 本仓库：见 git remote

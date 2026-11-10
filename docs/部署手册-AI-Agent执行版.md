@@ -413,10 +413,14 @@ Get-ChildItem $PRESET_DIR
 ```powershell
 node --check (Join-Path $PRESET_DIR 'autodoor-tools-v2.mjs')
 (Select-String -Path (Join-Path $PRESET_DIR 'autodoor-tools-v2.mjs') -Pattern "name: 'autodoor_" -AllMatches).Matches.Count
-(Get-ChildItem $PRESET_DIR -File).Count
+@('autodoor-tools-v2.mjs','agent.cordis.yml','preset.yml') | ForEach-Object { Test-Path (Join-Path $PRESET_DIR $_) }
 ```
 
-第一项无输出（语法 OK），第二项 = **12**，第三项 = **3**（三个文件都到位）。
+第一项无输出（语法 OK），第二项 = **12**，第三项输出三行 `True`（三个文件都到位）。
+
+> 第三项**不要用 `(Get-ChildItem $PRESET_DIR -File).Count -eq 3` 判定**：目录里常留有
+> `autodoor-tools-v2.mjs.bak-*` 之类的手工备份，计数会变成 4、5，判据就假失败了。
+> 旧版写法在这里踩过坑，改为逐个 `Test-Path` 后与备份无关。
 
 > 若第二项 < 12，说明拿到的是旧版工具集（8 个工具），⛔ 停止并换用配套版本——旧版缺 `ai` / `assets` 相关工具，会导致校验与素材流程不可用。
 
@@ -478,6 +482,9 @@ New-Item -ItemType Directory -Force -Path "$PROJECTS_ROOT\smoke" | Out-Null
 
 #### S8.2 生成并校验一棵树
 
+> **`<CLI>` 按方案取**：源码方案 `.\venv\Scripts\python.exe cli.py`，打包方案 `autodoor-cli.exe`。
+> 下文命令统一写成 `<CLI>`，执行时替换，别照抄某一种。
+
 ```powershell
 # 用 CLI 的 ai generate 或手写；此处以手写最小树为例
 $tree = @'
@@ -489,48 +496,160 @@ $tree = @'
     "n0": {"id":"n0","type":"StartNode","name":"开始","enabled":true,"config":{},"children":["n1"]},
     "n1": {"id":"n1","type":"SequenceNode","name":"主序列","enabled":true,"config":{},"children":["n2"]},
     "n2": {"id":"n2","type":"ImageConditionNode","name":"模板检测","enabled":true,
-           "config":{"template_path":"tpl.png","threshold":75},"children":[]}
+           "config":{"template_path":"tpl.png","threshold":75},"children":["n3"]},
+    "n3": {"id":"n3","type":"DelayNode","name":"等待","enabled":true,"config":{"delay_ms":500},"children":[]}
   },
-  "connections":[{"parent_id":"n0","child_id":"n1"},{"parent_id":"n1","child_id":"n2"}]
+  "connections":[{"parent_id":"n0","child_id":"n1"},{"parent_id":"n1","child_id":"n2"},{"parent_id":"n2","child_id":"n3"}]
 }
 '@
-Set-Content -Path "$PROJECTS_ROOT\smoke\tree.json" -Value $tree -Encoding utf8
+
+# 写文件：不要用 Set-Content -Encoding utf8
+# Windows PowerShell 5.1 的 utf8 = UTF-8 with BOM，json.load 会直接抛
+# "Unexpected UTF-8 BOM (decode using utf-8-sig)"
+$enc = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText("$PROJECTS_ROOT\smoke\tree.json", $tree, $enc)
 
 # 校验
-& "$AUTODOOR_ROOT\autodoor-cli.exe" ai validate "$PROJECTS_ROOT\smoke\tree.json"
+& $CLI ai validate "$PROJECTS_ROOT\smoke\tree.json"
 ```
 
-**成功判据**：输出 `校验通过 ✓`，并给出正确的节点数与连接数。
+**成功判据**：输出 `校验通过 ✓`，并给出正确的节点数与连接数（上面的示例树是 4 节点 / 3 连接）。
 
 > 根节点必须是 `StartNode`，connection 必须用 `parent_id` / `child_id` 字段。用 `from` / `to` 会报"connection 的 parent_id 'None' 不存在"。
+>
+> **条件节点必须有子节点**：`ImageConditionNode` / `OCRConditionNode` / `ColorConditionNode` /
+> `NumberConditionNode` / `VariableConditionNode` / `TextExtractNode` 六类节点挂空 `children`
+> 会被校验器直接判 FAIL（`条件节点 n2 (ImageConditionNode) 必须有至少一个子节点`）。
+> 所以示例树在条件节点下面接了一个 `DelayNode`，别把它删掉当"精简"。
+>
+> 编码这块两种写法都对：`utf-8-sig` 读 / `UTF8Encoding($false)` 写（本文）与 `utf-8-sig` 读 /
+> `Set-Content -Encoding utf8` 写（带 BOM）—— 改造后的 CLI 都能吃；但**写出来的文件里带 BOM
+> 会在别的工具（如 pandas、部分 JSON 库、npm 包）里翻车**，所以推荐无 BOM。
 
 #### S8.3 验证 UIA 在真实环境可用
 
 ```powershell
-& "$AUTODOOR_ROOT\autodoor-cli.exe" plugin nodes | Select-String 'uia_bridge'
+& $CLI plugin nodes | Select-String 'uia_bridge'
 ```
 
-再用一个含 `uia_bridge.UIAStateNode` 的树对真实窗口做一次断言。**注意**：`run --headless` 会持续运行不自动退出，必须用超时包裹：
+再用一个含 `uia_bridge.UIAStateNode` 的树对真实窗口做一次断言。断言目标选**任务栏**
+（窗口类 `Shell_TrayWnd`，任何 Windows 会话里都存在，不必额外开窗口）：
 
 ```powershell
-$p = Start-Process -FilePath "$AUTODOOR_ROOT\autodoor-cli.exe" -ArgumentList 'run',"$PROJECTS_ROOT\smoke\tree_uia.json",'--headless' -PassThru -NoNewWindow
+$uia = @'
+{
+  "version": "2.1",
+  "format_type": "behavior_tree",
+  "root_node": "n0",
+  "nodes": {
+    "n0": {"id":"n0","type":"StartNode","name":"开始","enabled":true,"config":{},"children":["n1"]},
+    "n1": {"id":"n1","type":"SequenceNode","name":"主序列","enabled":true,"config":{},"children":["n2"]},
+    "n2": {"id":"n2","type":"uia_bridge.UIAStateNode","name":"任务栏存在","enabled":true,
+           "config":{"hwnd":0,"window_title":"","window_class":"Shell_TrayWnd",
+                     "control_name":"","control_type":"","expect":"exists"},"children":[]}
+  },
+  "connections":[{"parent_id":"n0","child_id":"n1"},{"parent_id":"n1","child_id":"n2"}]
+}
+'@
+$enc = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText("$PROJECTS_ROOT\smoke\tree_uia.json", $uia, $enc)
+
+# Start-Process 会把当前环境整份复制给子进程；若环境里同时存在 HTTP_PROXY 与 http_proxy
+# （PowerShell 的 env 字典不区分大小写），会抛 "字典中的关键字 HTTP_PROXY 所添加的关键字 http_proxy"
+Remove-Item Env:http_proxy, Env:https_proxy -ErrorAction SilentlyContinue
+
+$out = "$env:TEMP\uia_run.out"; $err = "$env:TEMP\uia_run.err"
+# 源码方案：-FilePath 用 venv 的 python.exe，并在 ArgumentList 最前面加 'cli.py'
+$exe = "$AUTODOOR_ROOT\venv\Scripts\python.exe"
+$argList = @('cli.py', 'run', "$PROJECTS_ROOT\smoke\tree_uia.json", '--headless', '--plugins')
+# 打包方案：$exe = "$AUTODOOR_ROOT\autodoor-cli.exe"; $argList 去掉开头的 'cli.py'
+
+$p = Start-Process -FilePath $exe -ArgumentList $argList -PassThru -NoNewWindow `
+        -RedirectStandardOutput $out -RedirectStandardError $err
 Start-Sleep -Seconds 8
 if (-not $p.HasExited) { $p.Kill() }
-Get-Content "$AUTODOOR_ROOT\logs\run_log.txt" -Tail 20
+
+Get-Content $out -Tail 20 -Encoding utf8      # 注意 -Encoding utf8，否则中文全乱码
 ```
 
-**成功判据**：日志中该节点状态为 `success`（或按预期 `failure`），且无 `ModuleNotFoundError`。
+**成功判据**：stdout 里能看到 `成功率: 100.0%`，且节点统计中出现
+`任务栏存在 (UIAStateNode)`；同时无 `ModuleNotFoundError`。
+
+实测的一段输出：
+
+```
+  节点执行总数: 3
+  成功率: 100.0%
+  耗时的节点:
+    1. 开始 (StartNode): 334.44ms, 1次
+    2. 主序列 (SequenceNode): 334.42ms, 1次
+    3. 任务栏存在 (UIAStateNode): 334.39ms, 1次
+```
+
+> **不要用 `logs\run_log.txt` 做判据**：实测该文件长度 0（headless 模式的执行结果只写到
+> stdout / 进程退出统计里）。判据必须落在上面重定向的 stdout 文件上。
+>
+> 引擎是否自己退出取决于树结构：单次 `Sequence` 走完后会输出统计并正常退出（本例 335ms
+> 就跑完了），含循环/持续监听节点的树则不会退出。所以**仍然一律用超时包裹**，不要假设它必然退出。
+>
+> `expect` 还支持 `not_exists` / `enabled` / `disabled` / `visible`，断言写错方向会得到"正确的 failure"。
 
 #### S8.4 在 DSH 会话内验证工具
 
 重启 DSH → 切到 `AutoDoor 自动化` 预设 → 让 Agent 调用一次只读工具：
 
 ```
-autodoor_list_nodes  → 应返回节点清单
-autodoor_status      → 应返回运行状态
+autodoor_list_nodes                     → 应返回节点清单（29 种内置节点）
+autodoor_list_plugins                   → 应返回插件清单（vlm_vision / uia_bridge / …）
+autodoor_validate {treeFile: "<绝对路径>"} → 应返回 校验通过 ✓
+autodoor_status {runId: "autodoor-1"}    → 应返回该 runId 的状态；未知 runId 返回 ok:false + 明确 error
 ```
 
 **成功判据**：工具返回结构化结果而非 "tool not found" 或超时。
+
+> **`autodoor_status` / `autodoor_stop` / `autodoor_read_log` 的 `runId` 是必填参数**，
+> 且只能查询**本次插件进程内**由 `autodoor_run` 创建的任务。无参调用会直接被 DSH 的
+> 参数校验拒绝（`ToolArgsError: invalid arguments: missing required property "runId"`），
+> 这是预期行为，不是插件坏了。
+
+**没有图形界面时的可重复替代验证**（等价于会话内调用，走同一份插件代码与同一套参数校验）：
+
+```powershell
+# 存成 probe.mjs，node probe.mjs 运行
+@'
+import { spawn } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
+
+const PLUGIN = process.env.USERPROFILE + '\\.dsh\\.agent-presets\\autodoor\\autodoor-tools-v2.mjs'
+
+// 用 child_process 实现 DSH subprocess 服务的最小兼容层
+function spawnCompat(o) {
+  const c = spawn(o.argv[0], o.argv.slice(1), { cwd: o.cwd, env: { ...process.env, ...(o.env || {}) }, windowsHide: true })
+  const b = { stdout: [], stderr: [] }
+  c.stdout.on('data', (d) => b.stdout.push(d)); c.stderr.on('data', (d) => b.stderr.push(d))
+  const done = new Promise((r) => { c.on('close', (k) => r({ exitCode: k === null ? -1 : k })); c.on('error', () => r({ exitCode: -1 })) })
+  const rd = (k) => ({ readFrom: () => ({ text: Buffer.concat(b[k]).toString('utf8') }) })
+  return { pid: c.pid, collected: { stdout: rd('stdout'), stderr: rd('stderr') }, done, terminate: () => c.kill() }
+}
+
+const tools = []
+const ctx = {
+  get: (s) => s === 'subprocess' ? { spawn: spawnCompat }
+           : s === 'tools' ? { register: (t) => { tools.push(t); return () => {} } }
+           : undefined,
+  effect: (fn) => fn(),
+}
+;(await import(pathToFileURL(PLUGIN).href)).default.apply(ctx)
+console.log('TOOLS=' + tools.length)                     // 期望 12
+for (const name of ['autodoor_list_nodes', 'autodoor_list_plugins']) {
+  const r = await tools.find((t) => t.name === name).execute({}, {})
+  console.log(name + ' ok=' + r.ok + ' len=' + String(r.stdout || '').length)
+}
+'@ | Set-Content -Path .\probe.mjs -Encoding utf8
+node .\probe.mjs
+```
+
+**成功判据**：`TOOLS=12`，且两个工具 `ok=true`、`len` 均非 0。
 
 > 若视觉工具（`vision_*`）不可用：这些工具需要会话内开启"识图"开关，且要在**新的**会话中才生效。仅装好插件不等于会话可用。
 
@@ -543,17 +662,33 @@ autodoor_status      → 应返回运行状态
 | # | 检查 | 命令 | 通过判据 |
 |---|---|---|---|
 | 1 | Node 版本 | `node --version` | ≥ v22.19 |
-| 2 | AutoDoor 依赖 | `python -c "import cv2,pywinauto"` | 无异常 |
+| 2 | AutoDoor 依赖 | `<PY> -c "import cv2,pywinauto"` | 无异常（见注 ①） |
 | 3 | 插件加载 | `<CLI> plugin nodes` | 含 `vlm_vision` + `uia_bridge`，无"导入失败" |
-| 4 | 树校验 | `<CLI> ai validate tree.json` | `校验通过 ✓` |
-| 5 | 素材命令 | `<CLI> assets list --project <dir>` | 正常返回 |
+| 4 | 树校验 | `<CLI> ai validate tree.json` | `校验通过 ✓`（见注 ②） |
+| 5 | 素材命令 | `<CLI> assets list --project <dir>` | 退出码 0（见注 ③） |
 | 6 | DSH 初始化 | `Test-Path $PROFILE_DIR\cordis.patch.yml` | `True` |
 | 7 | 视觉插件 | `Test-Path $PROFILE_DIR\node_modules\dsh-vision-router` | `True` |
-| 8 | doctor 自检 | `node ...\lib\doctor-cli-p0.js` | 含 `✓`，无 `✗` |
+| 8 | doctor 自检 | `node ...\lib\doctor-cli-p0.js` | 含 `✓`，无 `✗`（见注 ④） |
 | 9 | 工具数量 | `Select-String ... -Pattern "name: 'autodoor_"` | 12 |
 | 10 | 环境变量 | `[Environment]::GetEnvironmentVariable('AUTODOOR_ROOT','User')` | 返回实际根目录 |
 | 11 | 预设注册 | `Select-String cordis.patch.yml -Pattern 'preset-autodoor'` | 有匹配 |
-| 12 | 端到端 | DSH 会话内调 `autodoor_list_nodes` | 返回节点清单 |
+| 12 | 端到端 | DSH 会话内调 `autodoor_list_nodes` | 返回节点清单（见注 ⑤） |
+
+> **① 第 2 项必须用 venv 的解释器**。源码方案下 `<PY>` = `.\venv\Scripts\python.exe`。
+> 直接写 `python` 会命中系统解释器（例如 conda 的），而依赖只装在 venv 里，必然报
+> `ModuleNotFoundError: No module named 'pywinauto'` —— 这是**判据用错**，不是环境坏了。
+>
+> **② 第 4 项**：`tree.json` 允许带 UTF-8 BOM（`ai validate` / `run` / GUI 打开均已按
+> `utf-8-sig` 读取）。若报 `Unexpected UTF-8 BOM`，说明用的是未含该修复的旧代码。
+>
+> **③ 第 5 项**：空工程**不会输出空列表**，实测输出一行 `manifest 不存在: <project>\assets\manifest.json`
+> 且退出码 0。以退出码判定，别去 grep 列表。
+>
+> **④ 第 8 项**：doctor 还有两类标记不算失败 —— `–`（该项不适用，例如
+> `– headless — Vision Router not installed in this profile`）与 `?`（需鉴权/未知，
+> 例如 `? Runtime probe: ... browser authentication is required`）。只有 `✗` 才算失败。
+>
+> **⑤ 第 12 项**：没有图形界面时的可重复替代验证见 S8.4 末尾的 `dsh_tool_probe.mjs` 方式。
 
 > **打包方案（S2'）跳过第 2 项**：该方案不装 Python，`cv2` / `pywinauto` 已随 exe 打包，命令必然报 ModuleNotFoundError。
 > 此时按 **11 项**判定，输出 `验收: 11/11 PASS`；其余 11 项判据不变。
@@ -579,10 +714,13 @@ autodoor_status      → 应返回运行状态
 | 插件列表为空 | `plugins\` 位置不对 | 确认 `plugins\` 与 `cli.py`（或 `autodoor-cli.exe`）同级 |
 | `No module named 'plugins'` | 打包产物缺 sys.path 修复 | 用本文对应版本的代码重新构建 |
 | `校验失败：根节点必须是 StartNode` | 树格式错 | 根节点改 `StartNode`，connection 用 `parent_id`/`child_id` |
+| `校验失败：条件节点 nX (ImageConditionNode) 必须有至少一个子节点` | 条件节点挂了空 `children` | 条件类节点下面接一个动作节点（如 `DelayNode`），别把条件节点当叶子用 |
+| `tree.json 解析失败: Unexpected UTF-8 BOM` | 文件头有 BOM，`json.load(encoding='utf-8')` 不认 | 用含 `utf-8-sig` 读取的改造版；或重写为无 BOM：`[System.IO.File]::WriteAllText($p,$t,(New-Object System.Text.UTF8Encoding($false)))` |
 | 检测点位置整体偏移 1920px | 多显示器负原点未修复 | 确认用的是改造版（`bt_core/nodes.py` 的 `_adjust_position` 含三分支） |
 | `run --headless` 不退出 | 设计如此（引擎循环） | 用超时包裹，或由 `stop` 命令终止 |
+| `[ServiceRegistry] start failed for auth/async: ... object has no attribute 'start'` | `NoopAuthService` / `AsyncExecutor` 没有 `start` 方法，注册表照流程尝试启动 | **无害**，不影响执行。树照常跑（实测成功率 100%），不要因此去改代码 |
 | 打包版 CLI 无任何输出 | 用了 GUI 版 exe | 换 `autodoor-cli.exe` |
-| 中文输出乱码 | 管道编码 | 用改造版（`cli.py` 含 `_ensure_utf8_stdio`），或设 `PYTHONIOENCODING=utf-8` |
+| 中文输出乱码 | 管道编码 | 用改造版（`cli.py` 含 `_ensure_utf8_stdio`），或设 `PYTHONIOENCODING=utf-8`。**若 CLI 直接跑正常、只有 PowerShell 里乱码**，那是读取侧代码页问题：先 `[Console]::OutputEncoding=[Text.Encoding]::UTF8`，不是产品缺陷 |
 
 ### 5.2 DSH 侧
 
@@ -644,6 +782,6 @@ npx -y --registry=https://registry.npmmirror.com @deepseek-ai/dsh plugin --profi
 | "`plugin nodes` 能列出节点，说明插件完全可用" | 不够。`pywinauto` 是延迟导入，必须真正执行一次 UIA 节点 |
 | "DSH 装好插件就能用视觉工具" | 不够。要开"识图"开关，且需新会话 |
 | "把文件放进 `.agent-presets` 就会被加载" | 0.2.x 起不扫描该目录，必须写 `cordis.patch.yml` |
-| "`run --headless` 跑完会自己退出" | 不会。引擎持续运行，必须外部超时 |
+| "`run --headless` 跑完会自己退出" | 看树结构：单次 `Sequence` 走完会输出统计并退出（实测 335ms），含循环/持续监听节点的树不会。一律用超时包裹 |
 | "打包版的 exe 和 CLI 版是同一个入口" | 不是。GUI 版无 stdout，脚本必须用 `autodoor-cli.exe` |
 | "`校验通过` 说明节点都能跑" | 只说明反序列化成功，不代表运行时行为正确 |

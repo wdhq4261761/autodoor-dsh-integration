@@ -381,7 +381,7 @@ export default {
             let usePlugins = !!args.plugins
             if (!usePlugins) {
               try {
-                const t = JSON.parse(readFileSync(args.treeFile, 'utf-8'))
+                const t = JSON.parse(readFileSync(args.treeFile, 'utf-8').replace(/^\uFEFF/, ''))
                 const types = Object.keys(t.nodes || {}).map(function (id) { return t.nodes[id].type })
                 usePlugins = types.some(function (x) { return typeof x === 'string' && x.indexOf('.') >= 0 })
               } catch (e) { /* 读取失败时沿用显式参数 */ }
@@ -675,7 +675,7 @@ export default {
             const r = await execSync(['ai', 'generate', file])
             const treePath = join(ROOT, '.ai', 'tree.json')
             let parsed = null
-            try { parsed = JSON.parse(readFileSync(treePath, 'utf-8')) } catch (e) { /* ignore */ }
+            try { parsed = JSON.parse(readFileSync(treePath, 'utf-8').replace(/^\uFEFF/, '')) } catch (e) { /* ignore */ }
             return {
               ok: r.ok,
               exitCode: r.exitCode,
